@@ -248,7 +248,7 @@ class VideoSSHManager {
                     `SELECT COALESCE(SUM(CEIL(tamanho_arquivo / (1024 * 1024))), 0) as used_mb
                      FROM videos 
                      WHERE pasta = ? AND codigo_cliente = ?`,
-                    [folder.codigo, folder.codigo_cliente]
+                    [folder.codigo, folder.codigo_cliente || null]
                 );
                 
                 const usedMB = spaceRows[0]?.used_mb || 0;
