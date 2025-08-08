@@ -63,7 +63,9 @@ const ConversaoVideos: React.FC = () => {
   const [showConversionModal, setShowConversionModal] = useState(false);
   const [selectedVideo, setSelectedVideo] = useState<VideoConversion | null>(null);
   const [conversionSettings, setConversionSettings] = useState<ConversionSettings>({
-    quality: 'media',
+    quality: 'custom',
+    custom_bitrate: 2500,
+    custom_resolution: '1920x1080',
     use_custom: false
   });
   const [qualityPresets, setQualityPresets] = useState<QualityPreset[]>([]);
@@ -149,18 +151,15 @@ const ConversaoVideos: React.FC = () => {
   const openConversionModal = (video: VideoConversion) => {
     setSelectedVideo(video);
     
-    // Definir qualidade padrão baseada no bitrate atual
-    let defaultQuality = 'media';
-    if (video.current_bitrate <= 800) defaultQuality = 'baixa';
-    else if (video.current_bitrate <= 1500) defaultQuality = 'media';
-    else if (video.current_bitrate <= 2500) defaultQuality = 'alta';
-    else defaultQuality = 'fullhd';
+    // Sempre começar com configuração customizada
+    const currentBitrate = video.current_bitrate || user?.bitrate || 2500;
+    const maxBitrate = user?.bitrate || 2500;
     
     setConversionSettings({
-      quality: defaultQuality,
-      custom_bitrate: video.current_bitrate || user?.bitrate || 2500,
+      quality: 'custom',
+      custom_bitrate: Math.min(currentBitrate, maxBitrate),
       custom_resolution: '1920x1080',
-      use_custom: false
+      use_custom: true
     });
     setShowConversionModal(true);
   };
@@ -676,26 +675,32 @@ const ConversaoVideos: React.FC = () => {
 
               {/* Seleção de qualidade */}
               <div className="space-y-4">
-                <div className="flex items-center space-x-4">
-                  <label className="flex items-center">
-                    <input
-                      type="radio"
-                      checked={!conversionSettings.use_custom}
-                      onChange={() => setConversionSettings(prev => ({ ...prev, use_custom: false }))}
-                      className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300"
-                    />
-                    <span className="ml-2 text-sm font-medium text-gray-700">Usar qualidade predefinida</span>
-                  </label>
-                  
-                  <label className="flex items-center">
-                    <input
-                      type="radio"
-                      checked={conversionSettings.use_custom}
-                      onChange={() => setConversionSettings(prev => ({ ...prev, use_custom: true }))}
-                      className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300"
-                    />
-                    <span className="ml-2 text-sm font-medium text-gray-700">Configuração customizada</span>
-                  </label>
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <h4 className="font-medium text-blue-900 mb-2">🎯 Configuração de Conversão</h4>
+                  <p className="text-blue-800 text-sm mb-3">
+                    Configure o bitrate e resolução exatos que deseja para o vídeo convertido.
+                  </p>
+                  <div className="flex items-center space-x-4">
+                    <label className="flex items-center">
+                      <input
+                        type="radio"
+                        checked={!conversionSettings.use_custom}
+                        onChange={() => setConversionSettings(prev => ({ ...prev, use_custom: false }))}
+                        className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300"
+                      />
+                      <span className="ml-2 text-sm font-medium text-blue-700">Usar qualidade predefinida</span>
+                    </label>
+                    
+                    <label className="flex items-center">
+                      <input
+                        type="radio"
+                        checked={conversionSettings.use_custom}
+                        onChange={() => setConversionSettings(prev => ({ ...prev, use_custom: true }))}
+                        className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300"
+                      />
+                      <span className="ml-2 text-sm font-medium text-blue-700">Configuração personalizada (Recomendado)</span>
+                    </label>
+                  </div>
                 </div>
 
                 {!conversionSettings.use_custom ? (
@@ -734,45 +739,84 @@ const ConversaoVideos: React.FC = () => {
                     </div>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Bitrate Customizado (kbps)
-                      </label>
-                      <input
-                        type="number"
-                        min="500"
-                        max={user?.bitrate || 2500}
-                        value={conversionSettings.custom_bitrate || ''}
-                        onChange={(e) => setConversionSettings(prev => ({ 
-                          ...prev, 
-                          custom_bitrate: parseInt(e.target.value) || undefined
-                        }))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">
-                        Máximo permitido: {user?.bitrate || 2500} kbps
-                      </p>
-                    </div>
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                    <h4 className="font-medium text-green-900 mb-3">⚙️ Configuração Personalizada</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-green-800 mb-2">
+                          Bitrate Desejado (kbps) *
+                        </label>
+                        <input
+                          type="number"
+                          min="500"
+                          max={user?.bitrate || 2500}
+                          step="100"
+                          value={conversionSettings.custom_bitrate || ''}
+                          onChange={(e) => setConversionSettings(prev => ({ 
+                            ...prev, 
+                            custom_bitrate: parseInt(e.target.value) || undefined
+                          }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+                          placeholder="Ex: 1000, 1500, 2000..."
+                        />
+                        <div className="mt-2 text-xs text-green-700 space-y-1">
+                          <p>• <strong>Máximo permitido:</strong> {user?.bitrate || 2500} kbps</p>
+                          <p>• <strong>Recomendado para 720p:</strong> 1000-1500 kbps</p>
+                          <p>• <strong>Recomendado para 1080p:</strong> 1500-2500 kbps</p>
+                        </div>
+                      </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Resolução Customizada
-                      </label>
-                      <select
-                        value={conversionSettings.custom_resolution || '1920x1080'}
-                        onChange={(e) => setConversionSettings(prev => ({ 
-                          ...prev, 
-                          custom_resolution: e.target.value 
-                        }))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
-                      >
-                        <option value="1920x1080">1080p (1920x1080)</option>
-                        <option value="1280x720">720p (1280x720)</option>
-                        <option value="854x480">480p (854x480)</option>
-                        <option value="640x360">360p (640x360)</option>
-                      </select>
+                      <div>
+                        <label className="block text-sm font-medium text-green-800 mb-2">
+                          Resolução *
+                        </label>
+                        <select
+                          value={conversionSettings.custom_resolution || '1920x1080'}
+                          onChange={(e) => setConversionSettings(prev => ({ 
+                            ...prev, 
+                            custom_resolution: e.target.value 
+                          }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+                        >
+                          <option value="1920x1080">1080p (1920x1080) - Full HD</option>
+                          <option value="1280x720">720p (1280x720) - HD</option>
+                          <option value="854x480">480p (854x480) - SD</option>
+                          <option value="640x360">360p (640x360) - Baixa</option>
+                        </select>
+                        <div className="mt-2 text-xs text-green-700">
+                          <p>💡 <strong>Dica:</strong> Você pode usar Full HD (1080p) com bitrate baixo (ex: 1000 kbps) para economizar espaço mantendo boa resolução</p>
+                        </div>
+                      </div>
                     </div>
+                    
+                    {/* Validação em tempo real */}
+                    {conversionSettings.custom_bitrate && (
+                      <div className={`mt-3 p-3 rounded-md ${
+                        conversionSettings.custom_bitrate > (user?.bitrate || 2500) ? 
+                          'bg-red-50 border border-red-200' : 
+                          'bg-blue-50 border border-blue-200'
+                      }`}>
+                        <p className={`text-sm font-medium ${
+                          conversionSettings.custom_bitrate > (user?.bitrate || 2500) ? 
+                            'text-red-800' : 'text-blue-800'
+                        }`}>
+                          {conversionSettings.custom_bitrate > (user?.bitrate || 2500) ? 
+                            `❌ Bitrate ${conversionSettings.custom_bitrate} kbps excede o limite do plano (${user?.bitrate || 2500} kbps)` :
+                            `✅ Configuração válida: ${conversionSettings.custom_resolution} @ ${conversionSettings.custom_bitrate} kbps`
+                          }
+                        </p>
+                        {conversionSettings.custom_bitrate <= (user?.bitrate || 2500) && (
+                          <div className="mt-2 text-xs text-blue-700">
+                            <p>• <strong>Qualidade estimada:</strong> {
+                              conversionSettings.custom_bitrate <= 800 ? 'Básica' :
+                              conversionSettings.custom_bitrate <= 1500 ? 'Boa' :
+                              conversionSettings.custom_bitrate <= 2500 ? 'Muito Boa' : 'Excelente'
+                            }</p>
+                            <p>• <strong>Tamanho estimado:</strong> ~{Math.round((conversionSettings.custom_bitrate * (selectedVideo?.duracao || 300)) / 8000)} MB</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -792,9 +836,12 @@ const ConversaoVideos: React.FC = () => {
                     <>
                       <p>• Bitrate: {conversionSettings.custom_bitrate || 'N/A'} kbps</p>
                       <p>• Resolução: {conversionSettings.custom_resolution || 'N/A'}</p>
+                      <p>• Tamanho estimado: ~{conversionSettings.custom_bitrate ? Math.round((conversionSettings.custom_bitrate * (selectedVideo?.duracao || 300)) / 8000) : 'N/A'} MB</p>
                     </>
                   )}
                   <p>• Tempo estimado: 5-15 minutos (dependendo do tamanho)</p>
+                  <p>• Codec de vídeo: H.264 (compatibilidade máxima)</p>
+                  <p>• Codec de áudio: AAC 128 kbps</p>
                 </div>
               </div>
             </div>
@@ -813,10 +860,21 @@ const ConversaoVideos: React.FC = () => {
                     !conversionSettings.custom_bitrate || (conversionSettings.custom_bitrate > (user?.bitrate || 2500)) :
                     !qualityPresets.find(p => p.quality === conversionSettings.quality)?.available
                 }
-                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 flex items-center"
+                className={`px-4 py-2 rounded-md disabled:opacity-50 flex items-center ${
+                  conversionSettings.use_custom && conversionSettings.custom_bitrate && conversionSettings.custom_bitrate <= (user?.bitrate || 2500) ?
+                    'bg-green-600 text-white hover:bg-green-700' :
+                    !conversionSettings.use_custom && qualityPresets.find(p => p.quality === conversionSettings.quality)?.available ?
+                    'bg-green-600 text-white hover:bg-green-700' :
+                    'bg-gray-400 text-gray-200 cursor-not-allowed'
+                }`}
               >
                 <Settings className="h-4 w-4 mr-2" />
-                Iniciar Conversão
+                {conversionSettings.use_custom && conversionSettings.custom_bitrate && conversionSettings.custom_bitrate <= (user?.bitrate || 2500) ?
+                  `Converter para ${conversionSettings.custom_bitrate} kbps` :
+                  !conversionSettings.use_custom && qualityPresets.find(p => p.quality === conversionSettings.quality)?.available ?
+                  'Iniciar Conversão' :
+                  'Configuração Inválida'
+                }
               </button>
             </div>
           </div>
@@ -891,15 +949,16 @@ const ConversaoVideos: React.FC = () => {
         <div className="flex items-start">
           <AlertCircle className="h-5 w-5 text-blue-600 mr-3 mt-0.5" />
           <div>
-            <h3 className="text-blue-900 font-medium mb-2">Sistema de Conversão Avançado</h3>
+            <h3 className="text-blue-900 font-medium mb-2">🎯 Sistema de Conversão Personalizada</h3>
             <ul className="text-blue-800 text-sm space-y-1">
               <li>• <strong>Todos os vídeos</strong> são listados, independente do formato</li>
-              <li>• <strong>Qualidades predefinidas:</strong> Baixa (480p), Média (720p), Alta (1080p), Full HD (1080p+)</li>
-              <li>• <strong>Configuração customizada:</strong> Defina bitrate e resolução específicos</li>
+              <li>• <strong>Bitrate personalizado:</strong> Escolha exatamente o kbps que deseja (ex: Full HD com 1000 kbps)</li>
+              <li>• <strong>Resolução independente:</strong> Combine qualquer resolução com qualquer bitrate</li>
+              <li>• <strong>Otimização inteligente:</strong> Mantenha Full HD com bitrate baixo para economizar espaço</li>
               <li>• <strong>Limite respeitado:</strong> Apenas qualidades dentro do seu plano são permitidas</li>
               <li>• <strong>MP4 originais:</strong> Podem ser reconvertidos para diferentes qualidades</li>
               <li>• <strong>Player HTML5:</strong> Visualização direta de todos os vídeos</li>
-              <li>• <strong>Conversão inteligente:</strong> Preserva qualidade visual otimizando tamanho</li>
+              <li>• <strong>Exemplo prático:</strong> Full HD (1920x1080) com 1000 kbps = boa qualidade, arquivo menor</li>
             </ul>
           </div>
         </div>

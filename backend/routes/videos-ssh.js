@@ -660,7 +660,7 @@ router.post('/sync-database', authMiddleware, async (req, res) => {
     // Limpar vídeos antigos desta pasta do banco
     await db.execute(
       'DELETE FROM videos WHERE pasta = ? AND codigo_cliente = ?',
-      [folderId, userId]
+      [folderId, decoded.userId]
     );
 
     // Inserir vídeos atualizados na tabela videos
@@ -681,7 +681,7 @@ router.post('/sync-database', authMiddleware, async (req, res) => {
             video.fullPath,
             video.duration,
             video.size,
-            userId,
+            decoded.userId,
             folderId,
             video.bitrate_video || 0,
             video.formato_original || 'unknown',
