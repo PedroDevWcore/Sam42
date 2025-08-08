@@ -94,13 +94,17 @@ class VideoSSHManager {
                         
                         if (probeData.format) {
                             duration = Math.floor(parseFloat(probeData.format.duration) || 0);
-                            videoBitrate = Math.floor(parseInt(probeData.format.bit_rate) / 1000) || 0;
+                            videoBitrate = Math.floor(parseInt(probeData.format.bit_rate) / 1000) || 0; // Converter para kbps
                         }
                         
                         if (probeData.streams) {
                             const videoStream = probeData.streams.find(s => s.codec_type === 'video');
                             if (videoStream && videoStream.codec_name) {
                                 videoFormat = videoStream.codec_name;
+                                // Se não conseguiu bitrate do format, tentar do stream de vídeo
+                                if (!videoBitrate && videoStream.bit_rate) {
+                                    videoBitrate = Math.floor(parseInt(videoStream.bit_rate) / 1000) || 0;
+                                }
                             }
                         }
                     }
@@ -127,9 +131,9 @@ class VideoSSHManager {
                     is_mp4: isMP4,
                     needs_conversion: needsConversion,
                     bitrate_video: videoBitrate,
+                    bitrate_original: videoBitrate, // Bitrate original do arquivo
                     formato_original: videoFormat,
                     can_use: !needsConversion,
-                    bitrate_original: videoBitrate, // Bitrate original do arquivo
                     folder: folderPath === '.' ? 'root' : folderPath,
                     size: size,
                     duration: duration,

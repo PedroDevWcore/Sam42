@@ -17,6 +17,11 @@ interface Video {
   tamanho?: number;
   folder?: string;
   user?: string;
+  bitrate_video?: number;
+  formato_original?: string;
+  is_mp4?: boolean;
+  user_bitrate_limit?: number;
+  bitrate_exceeds_limit?: boolean;
 }
 
 interface FolderUsage {
@@ -45,6 +50,9 @@ const GerenciarVideos: React.FC = () => {
   const [editingVideo, setEditingVideo] = useState<{ id: number; nome: string } | null>(null);
   const [newVideoName, setNewVideoName] = useState('');
 
+  // Upload progress state
+  const [uploadProgress, setUploadProgress] = useState<Record<number, number>>({});
+  const [uploadingFiles, setUploadingFiles] = useState<Record<number, string>>({});
   useEffect(() => {
     loadFolders();
   }, []);
@@ -150,6 +158,8 @@ const GerenciarVideos: React.FC = () => {
     }
 
     setUploading(true);
+    setUploadProgress(prev => ({ ...prev, [folderId]: 0 }));
+    setUploadingFiles(prev => ({ ...prev, [folderId]: file.name }));
 
     try {
       const token = await getToken();
@@ -157,30 +167,68 @@ const GerenciarVideos: React.FC = () => {
       formData.append('video', file);
       formData.append('duracao', '0');
       formData.append('tamanho', file.size.toString());
+      formData.append('bitrate_video', '0'); // Será detectado pelo servidor
 
-      const response = await fetch(`/api/videos/upload?folder_id=${folderId}`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData
+      // Criar XMLHttpRequest para monitorar progresso
+      const xhr = new XMLHttpRequest();
+      
+      // Monitorar progresso do upload
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable) {
+          const percentComplete = Math.round((e.loaded / e.total) * 100);
+          setUploadProgress(prev => ({ ...prev, [folderId]: percentComplete }));
+        }
       });
-
-      if (response.ok) {
-        const result = await response.json();
-        toast.success(`Vídeo "${result.nome}" enviado com sucesso!`);
-        await loadVideosForFolder(folderId);
-        await loadFolderUsage(folderId);
+      
+      // Promise para aguardar conclusão
+      const uploadPromise = new Promise<any>((resolve, reject) => {
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              const result = JSON.parse(xhr.responseText);
+              resolve(result);
+            } catch (error) {
+              reject(new Error('Erro ao processar resposta do servidor'));
+            }
+          } else {
+            try {
+              const errorData = JSON.parse(xhr.responseText);
+              reject(new Error(errorData.error || 'Erro no upload'));
+            } catch (error) {
+              reject(new Error(`Erro HTTP ${xhr.status}`));
+            }
+          }
+        };
         
-        // Reset input
-        event.target.value = '';
-      } else {
-        const errorData = await response.json();
-        toast.error(errorData.error || 'Erro no upload');
-      }
+        xhr.onerror = () => reject(new Error('Erro de rede durante upload'));
+        xhr.ontimeout = () => reject(new Error('Timeout no upload'));
+      });
+      
+      // Configurar e enviar requisição
+      xhr.open('POST', `/api/videos/upload?folder_id=${folderId}`);
+      xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      xhr.timeout = 300000; // 5 minutos
+      xhr.send(formData);
+      
+      const result = await uploadPromise;
+
+      toast.success(`Vídeo "${result.nome}" enviado com sucesso!`);
+      await loadVideosForFolder(folderId);
+      await loadFolderUsage(folderId);
+      
+      // Reset input
+      event.target.value = '';
     } catch (error) {
       console.error('Erro no upload:', error);
-      toast.error('Erro no upload do vídeo');
+      if (error instanceof Error) {
+        toast.error(error.message);
+      } else {
+        toast.error('Erro no upload do vídeo');
+      }
     } finally {
       setUploading(false);
+      setUploadProgress(prev => ({ ...prev, [folderId]: 0 }));
+      setUploadingFiles(prev => ({ ...prev, [folderId]: '' }));
     }
   };
 
@@ -474,13 +522,13 @@ const GerenciarVideos: React.FC = () => {
                       <div className="flex items-center space-x-2">
                         <label className="bg-primary-600 text-white px-3 py-2 rounded-md hover:bg-primary-700 cursor-pointer flex items-center text-sm">
                           <Upload className="h-4 w-4 mr-2" />
-                          {uploading ? 'Enviando...' : 'Enviar'}
+                          {uploadingFiles[folder.id] ? 'Enviando...' : 'Enviar'}
                           <input
                             type="file"
                             accept="video/*,.mp4,.avi,.mov,.wmv,.flv,.webm,.mkv,.3gp,.3g2,.ts,.mpg,.mpeg,.ogv,.m4v,.asf"
                             onChange={(e) => handleFileUpload(e, folder.id)}
                             className="hidden"
-                            disabled={uploading}
+                            disabled={uploading || uploadingFiles[folder.id]}
                           />
                         </label>
                         
@@ -608,9 +656,25 @@ const GerenciarVideos: React.FC = () => {
                                     <button
                                       onClick={() => handleDeleteVideo(video.id, video.nome, folder.id)}
                                       className="text-red-600 hover:text-red-800 p-2 rounded-md hover:bg-red-50 transition-colors"
-                                      title="Excluir"
-                                    >
+                                      {video.bitrate_video && (
+                                        <span className={`📊 ${
+                                          video.bitrate_exceeds_limit ? 'text-red-600 font-semibold' : 'text-gray-600'
+                                        }`}>
+                                          📊 {video.bitrate_video} kbps
+                                          {video.bitrate_exceeds_limit && (
+                                            <span className="ml-1 text-xs bg-red-100 text-red-800 px-1 rounded">
+                                              EXCEDE LIMITE
+                                            </span>
+                                          )}
+                                        </span>
                                       <Trash2 className="h-4 w-4" />
+                                      {video.formato_original && (
+                                        <span className={`text-xs px-2 py-1 rounded-full ${
+                                          video.is_mp4 ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                                        }`}>
+                                          {video.formato_original.toUpperCase()}
+                                        </span>
+                                      )}
                                     </button>
                                   </div>
                                 )}
@@ -668,6 +732,28 @@ const GerenciarVideos: React.FC = () => {
                   onClick={() => setShowNewFolderModal(false)}
                   className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400"
                 >
+                {/* Barra de progresso do upload */}
+                {uploadingFiles[folder.id] && (
+                  <div className="bg-blue-50 border-t border-blue-200 p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-medium text-blue-800">
+                        Enviando: {uploadingFiles[folder.id]}
+                      </span>
+                      <span className="text-sm text-blue-600">
+                        {uploadProgress[folder.id] || 0}%
+                      </span>
+                    </div>
+                    <div className="w-full bg-blue-200 rounded-full h-2">
+                      <div
+                        className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                        style={{ width: `${uploadProgress[folder.id] || 0}%` }}
+                      ></div>
+                    </div>
+                    <p className="text-xs text-blue-600 mt-1">
+                      Aguarde... O arquivo será salvo no formato original sem conversão automática.
+                    </p>
+                  </div>
+                )}
                   Cancelar
                 </button>
                 <button
@@ -746,9 +832,12 @@ const GerenciarVideos: React.FC = () => {
               <li>• Clique na seta ao lado da pasta para expandir e ver os vídeos</li>
               <li>• Use os botões de ação para reproduzir, editar, visualizar ou excluir vídeos</li>
               <li>• Envie vídeos nos formatos: MP4, AVI, MOV, WMV, FLV, WebM, MKV, etc.</li>
-              <li>• Vídeos são automaticamente convertidos para MP4 se necessário</li>
+              <li>• <strong>NOVO:</strong> Vídeos são salvos no formato original (sem conversão automática)</li>
+              <li>• <strong>Bitrate em vermelho:</strong> Indica que o vídeo excede o limite do seu plano</li>
+              <li>• <strong>Barra de progresso:</strong> Acompanhe o envio de arquivos grandes em tempo real</li>
               <li>• Use "Sincronizar" para atualizar a lista com vídeos enviados via FTP</li>
               <li>• Monitore o uso de espaço para não exceder seu plano</li>
+              <li>• Para converter vídeos, use a página "Conversão de Vídeos"</li>
             </ul>
           </div>
         </div>

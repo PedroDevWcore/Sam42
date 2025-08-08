@@ -138,7 +138,10 @@ router.get('/', authMiddleware, async (req, res) => {
         is_mp4: video.is_mp4,
         compativel: video.compativel,
         folder: folderName,
-        user: userLogin
+        user: userLogin,
+        // Adicionar informações para validação de bitrate
+        user_bitrate_limit: req.user.bitrate || 2500,
+        bitrate_exceeds_limit: (video.bitrate_video || 0) > (req.user.bitrate || 2500)
       };
     });
 
@@ -181,6 +184,7 @@ router.post('/upload', authMiddleware, upload.single('video'), async (req, res) 
 
     const duracao = parseInt(req.body.duracao) || 0;
     const tamanho = parseInt(req.body.tamanho) || req.file.size;
+    const bitrateVideo = parseInt(req.body.bitrate_video) || 0;
 
     const [userRows] = await db.execute(
       `SELECT 
@@ -236,13 +240,13 @@ router.post('/upload', authMiddleware, upload.single('video'), async (req, res) 
     // Nome do vídeo para salvar no banco
     const videoTitle = req.file.originalname;
 
-    // Salvar na tabela videos
+    // Salvar na tabela videos SEM conversão automática
     const [result] = await db.execute(
       `INSERT INTO videos (
         nome, descricao, url, caminho, duracao, tamanho_arquivo,
         codigo_cliente, pasta, bitrate_video, formato_original,
         largura, altura, is_mp4, compativel
-      ) VALUES (?, '', ?, ?, ?, ?, ?, ?, '2500', ?, '1920', '1080', ?, 'sim')`,
+      ) VALUES (?, '', ?, ?, ?, ?, ?, ?, ?, ?, '1920', '1080', ?, 'sim')`,
       [
         videoTitle,
         relativePath,
@@ -251,6 +255,7 @@ router.post('/upload', authMiddleware, upload.single('video'), async (req, res) 
         tamanho,
         userId,
         folderId,
+        bitrateVideo, // Usar bitrate real do arquivo
         fileExtension.substring(1),
         fileExtension === '.mp4' ? 1 : 0
       ]
@@ -263,54 +268,18 @@ router.post('/upload', authMiddleware, upload.single('video'), async (req, res) 
 
     console.log(`✅ Vídeo salvo no banco com ID: ${result.insertId}`);
 
-    // Construir URLs do Wowza para resposta
-    const isProduction = process.env.NODE_ENV === 'production';
-    const wowzaHost = isProduction ? 'samhost.wcore.com.br' : '51.222.156.223';
-
-    // Verificar se precisa converter para MP4
-    const needsConversion = !['.mp4'].includes(fileExtension);
-
-    let finalFileName = req.file.filename;
-    let finalRemotePath = remotePath;
-
-    // Se precisa converter, fazer conversão para MP4
-    if (needsConversion) {
-      const mp4FileName = req.file.filename.replace(/\.[^/.]+$/, '.mp4');
-      const mp4RemotePath = `/usr/local/WowzaStreamingEngine/content/${userLogin}/${folderName}/${mp4FileName}`;
-
-      console.log(`🔄 Convertendo ${req.file.filename} para MP4...`);
-
-      // Comando FFmpeg para conversão
-      const ffmpegCommand = `ffmpeg -i "${remotePath}" -c:v libx264 -preset fast -crf 23 -c:a aac -b:a 128k -movflags +faststart "${mp4RemotePath}" -y 2>/dev/null && echo "CONVERSION_SUCCESS" || echo "CONVERSION_ERROR"`;
-
-      try {
-        const conversionResult = await SSHManager.executeCommand(serverId, ffmpegCommand);
-
-        if (conversionResult.stdout.includes('CONVERSION_SUCCESS')) {
-          console.log(`✅ Conversão concluída: ${mp4FileName}`);
-          finalFileName = mp4FileName;
-          finalRemotePath = mp4RemotePath;
-        } else {
-          console.warn(`⚠️ Conversão falhou, usando arquivo original: ${req.file.filename}`);
-        }
-      } catch (conversionError) {
-        console.warn('Erro na conversão, usando arquivo original:', conversionError.message);
-      }
-    }
-
-    // Construir URLs corretas
-    const finalRelativePath = `${userLogin}/${folderName}/${finalFileName}`;
-    const mp4Url = finalRelativePath;
-    const hlsUrl = `http://${wowzaHost}:1935/vod/_definst_/mp4:${relativePath}/playlist.m3u8`;
+    // Construir URLs corretas SEM conversão automática
+    const finalRelativePath = relativePath;
 
     res.status(201).json({
       id: result.insertId,
       nome: videoTitle,
-      url: finalRelativePath, // Usar caminho relativo
-      hlsUrl: hlsUrl,
-      path: finalRemotePath,
+      url: finalRelativePath,
+      path: remotePath,
       originalFile: remotePath,
-      converted: needsConversion,
+      bitrate_video: bitrateVideo,
+      formato_original: fileExtension.substring(1),
+      is_mp4: fileExtension === '.mp4',
       duracao,
       tamanho
     });
